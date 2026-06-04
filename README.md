@@ -121,7 +121,7 @@ With agents reporting from both the **attacker** and the **target**, this SIEM c
 
 ## 💥 Attack Simulation: SSH Brute Force (Hydra)
 
-To prove the SIEM actually catches an attack, I ran a controlled **SSH brute-force** from the Kali host (Frieza) against a target on the `Namek` network using **Hydra** and the **rockyou.txt** wordlist against the `root` account:
+To prove the SIEM actually catches an attack, I ran a controlled **SSH brute-force** from the Kali host (Frieza, 10.10.10.219) against a **single target — the Windows 11 machine at 10.10.10.20** (running OpenSSH for Windows). This was a direct host-to-host attack, not a network-wide sweep. I used **Hydra** and the **rockyou.txt** wordlist against the `root` account:
 
 ```bash
 $ hydra -l root -P /usr/share/wordlists/rockyou.txt ssh://10.10.10.20

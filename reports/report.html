@@ -33,8 +33,8 @@
 <p class="meta">Classification: Lab / Educational &nbsp;|&nbsp; SIEM: Wazuh v4.12.0 (manager: ubuntu-srv01)</p>
 
 <h2>1. Executive Summary</h2>
-<p>A controlled SSH brute-force (password-guessing) attack was launched from the lab's Kali Linux attack host against a target system on the isolated <b>Namek</b> network, using <b>Hydra</b> and the <b>rockyou.txt</b> wordlist against the <code>root</code> account. The objective was twofold: demonstrate the offensive technique, and validate that the <b>Wazuh SIEM</b> detects and surfaces the activity.</p>
-<p>The attack was <b>successfully detected</b>. Within the monitoring window the SIEM recorded <b>16,420 total alerts</b>, including <b>~10,700 authentication failures</b> and <b>4 critical (level 12+) alerts</b>, and mapped the behavior to MITRE ATT&amp;CK techniques including <b>Brute Force</b>, <b>Password Guessing</b>, and <b>Valid Accounts</b>. The root cause is a target permitting <b>remote password authentication for a privileged account with no rate-limiting, lockout, or MFA</b>. Remediation steps are provided in Section 7.</p>
+<p>A controlled SSH brute-force (password-guessing) attack was launched from the lab's Kali Linux attack host (Frieza, 10.10.10.219) against a <b>single target — the Windows 11 host at 10.10.10.20</b>, which runs OpenSSH for Windows. This was a direct host-to-host attack, not a network-wide sweep. It used <b>Hydra</b> and the <b>rockyou.txt</b> wordlist against the <code>root</code> account. The objective was twofold: demonstrate the offensive technique, and validate that the <b>Wazuh SIEM</b> detects and surfaces the activity.</p>
+<p>The attack was <b>successfully detected</b>. Within the monitoring window the SIEM recorded <b>16,420 total alerts</b>, including <b>~10,700 authentication failures</b> and <b>4 critical (level 12+) alerts</b>, and mapped the behavior to MITRE ATT&amp;CK techniques including <b>Brute Force</b>, <b>Password Guessing</b>, and <b>Valid Accounts</b>. The root cause is a target permitting <b>remote password authentication for a privileged account with no rate-limiting, lockout, or MFA</b>. Remediation steps are provided in Section 8.</p>
 
 <div class="box">
 <b>Key finding:</b> <span class="crit">CRITICAL</span> — Remote SSH service permits password-based authentication for the <code>root</code> account with no brute-force protection, allowing unlimited automated password guessing.
@@ -43,11 +43,11 @@
 <h2>2. Lab Environment</h2>
 <table>
 <tr><th>Host</th><th>Role</th><th>OS</th><th>Address</th></tr>
-<tr><td>Frieza</td><td>Attacker / Pentester</td><td>Kali Linux</td><td>10.10.10.219</td></tr>
-<tr><td>Target</td><td>Victim system (SSH service)</td><td>—</td><td>10.10.10.20</td></tr>
+<tr><td>Frieza</td><td>Attacker (source of the brute-force)</td><td>Kali Linux</td><td>10.10.10.219</td></tr>
+<tr><td>windows-cli01</td><td><b>Target</b> — the only host attacked (OpenSSH for Windows)</td><td>Windows 11</td><td>10.10.10.20</td></tr>
 <tr><td>Goku</td><td>SIEM / Manager</td><td>Ubuntu Server</td><td>ubuntu-srv01</td></tr>
 </table>
-<p>All systems reside on the isolated <code>Namek</code> virtual network (<code>10.10.10.0/24</code>, NAT disabled, no internet egress). Wazuh agents on the endpoints forward authentication telemetry to the manager on Goku.</p>
+<p>All systems reside on the isolated <code>Namek</code> virtual network (<code>10.10.10.0/24</code>, NAT disabled, no internet egress). The attack was a <b>direct, single-host engagement from Frieza to windows-cli01</b> — no other hosts were scanned or targeted. Wazuh agents on the endpoints forward authentication telemetry to the manager on Goku.</p>
 
 <h2>3. Attack Execution</h2>
 <p>The attack was performed from Frieza (Kali) using <b>Hydra</b>, a parallelized network login cracker. A single command targets the SSH service, fixes the username to <code>root</code> (<code>-l</code>), and iterates every password in the rockyou wordlist (<code>-P</code>):</p>
@@ -57,7 +57,7 @@
 <tr><td><code>hydra</code></td><td>Parallel brute-force / credential-cracking tool</td></tr>
 <tr><td><code>-l root</code></td><td>Single target username: <code>root</code> (a high-value, privileged account)</td></tr>
 <tr><td><code>-P /usr/share/wordlists/rockyou.txt</code></td><td>Password list — ~14 million common, leaked passwords</td></tr>
-<tr><td><code>ssh://10.10.10.20</code></td><td>Protocol and target: SSH on the victim host</td></tr>
+<tr><td><code>ssh://10.10.10.20</code></td><td>Protocol and target: SSH on the single Windows 11 host (OpenSSH for Windows) — one IP, no network sweep</td></tr>
 </table>
 <p>Hydra opens many parallel SSH sessions and attempts each candidate password in rapid succession — generating a high-volume burst of failed authentication attempts that is the signature of this attack.</p>
 
