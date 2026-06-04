@@ -119,6 +119,34 @@ Both agents show **active** in the Wazuh dashboard, reporting from the `Namek` n
 
 With agents reporting from both the **attacker** and the **target**, this SIEM closes the purple-team loop: I can launch an attack from Frieza (Kali) against Vegeta (Windows 11) and watch the telemetry land on Goku's dashboard — failed logons, suspicious processes, and MITRE ATT&CK-mapped alerts — then investigate and tune detections.
 
+## 💥 Attack Simulation: SSH Brute Force (Hydra)
+
+To prove the SIEM actually catches an attack, I ran a controlled **SSH brute-force** from the Kali host (Frieza) against a target on the `Namek` network using **Hydra** and the **rockyou.txt** wordlist against the `root` account:
+
+```bash
+$ hydra -l root -P /usr/share/wordlists/rockyou.txt ssh://10.10.10.20
+```
+
+Wazuh detected it immediately — a sharp spike of authentication failures with critical correlated alerts and MITRE ATT&CK context:
+
+![Wazuh dashboard during the SSH brute-force attack](assets/ssh-bruteforce-dashboard.png)
+
+| Metric | Value |
+|---|---|
+| Total alerts | 16,420 |
+| **Authentication failures** | **~10,700** |
+| Authentication successes | 136 |
+| **Critical (level 12+) alerts** | **4** |
+| MITRE ATT&CK | Brute Force (T1110), Password Guessing (T1110.001), Valid Accounts (T1078) |
+
+### 📄 Full Vulnerability Assessment Report
+
+I wrote up the whole exercise as a formal report — attack execution, evidence, vulnerability finding (CVSS), MITRE mapping, **root-cause analysis**, and **step-by-step remediation** — with the auto-generated Wazuh Threat Hunting report appended as an appendix:
+
+**➡️ [SSH-BruteForce-Vulnerability-Assessment.pdf](reports/SSH-BruteForce-Vulnerability-Assessment.pdf)**
+
+**Headline finding:** `CRITICAL` — SSH permits password authentication for `root` with no rate-limiting, lockout, or MFA, allowing unlimited automated password guessing. Remediation: disable root login, enforce key-based auth, deploy Fail2Ban + MFA, and tune Wazuh active-response to auto-ban attacking IPs.
+
 ## 🗺️ Next Steps
 
 - [ ] Deploy **Sysmon** on Windows for deeper process/network telemetry

@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<style>
+  body{font-family:'Liberation Sans',Arial,sans-serif;color:#1a1a1a;font-size:11pt;line-height:1.5;margin:0;}
+  h1{color:#0b3d5c;font-size:22pt;margin:0 0 4pt 0;}
+  h2{color:#0b6e8c;font-size:15pt;border-bottom:2px solid #0b6e8c;padding-bottom:3pt;margin-top:22pt;}
+  h3{color:#0b3d5c;font-size:12pt;margin-top:14pt;margin-bottom:4pt;}
+  .sub{color:#555;font-size:11pt;margin:0;}
+  .meta{color:#777;font-size:10pt;}
+  table{border-collapse:collapse;width:100%;margin:8pt 0;font-size:10pt;}
+  th,td{border:1px solid #bbb;padding:5pt 7pt;text-align:left;vertical-align:top;}
+  th{background:#0b3d5c;color:#fff;}
+  tr:nth-child(even) td{background:#f1f5f8;}
+  code,.mono{font-family:'Liberation Mono',monospace;background:#eef2f5;padding:1pt 3pt;font-size:9.5pt;}
+  pre{background:#0b1722;color:#e6edf3;padding:10pt;font-family:'Liberation Mono',monospace;font-size:9.5pt;border-radius:4pt;white-space:pre-wrap;}
+  .crit{color:#b3001b;font-weight:bold;}
+  .high{color:#cc5500;font-weight:bold;}
+  .med{color:#b58900;font-weight:bold;}
+  .box{border-left:4px solid #0b6e8c;background:#f1f5f8;padding:8pt 12pt;margin:8pt 0;}
+  .pagebreak{page-break-before:always;}
+  img{max-width:100%;border:1px solid #ccc;}
+  ul{margin:4pt 0 4pt 0;}
+  li{margin-bottom:3pt;}
+</style>
+</head>
+<body>
+
+<h1>SSH Brute-Force Attack</h1>
+<p class="sub"><b>Vulnerability Assessment &amp; SIEM Detection Report</b></p>
+<p class="meta">Author: Pervis Harden — Cybersecurity Analyst / Ethical Hacker &nbsp;|&nbsp; Date: June 3, 2026 &nbsp;|&nbsp; Environment: "Namek" Homelab (isolated)</p>
+<p class="meta">Classification: Lab / Educational &nbsp;|&nbsp; SIEM: Wazuh v4.12.0 (manager: ubuntu-srv01)</p>
+
+<h2>1. Executive Summary</h2>
+<p>A controlled SSH brute-force (password-guessing) attack was launched from the lab's Kali Linux attack host against a target system on the isolated <b>Namek</b> network, using <b>Hydra</b> and the <b>rockyou.txt</b> wordlist against the <code>root</code> account. The objective was twofold: demonstrate the offensive technique, and validate that the <b>Wazuh SIEM</b> detects and surfaces the activity.</p>
+<p>The attack was <b>successfully detected</b>. Within the monitoring window the SIEM recorded <b>16,420 total alerts</b>, including <b>~10,700 authentication failures</b> and <b>4 critical (level 12+) alerts</b>, and mapped the behavior to MITRE ATT&amp;CK techniques including <b>Brute Force</b>, <b>Password Guessing</b>, and <b>Valid Accounts</b>. The root cause is a target permitting <b>remote password authentication for a privileged account with no rate-limiting, lockout, or MFA</b>. Remediation steps are provided in Section 7.</p>
+
+<div class="box">
+<b>Key finding:</b> <span class="crit">CRITICAL</span> — Remote SSH service permits password-based authentication for the <code>root</code> account with no brute-force protection, allowing unlimited automated password guessing.
+</div>
+
+<h2>2. Lab Environment</h2>
+<table>
+<tr><th>Host</th><th>Role</th><th>OS</th><th>Address</th></tr>
+<tr><td>Frieza</td><td>Attacker / Pentester</td><td>Kali Linux</td><td>10.10.10.219</td></tr>
+<tr><td>Target</td><td>Victim system (SSH service)</td><td>—</td><td>10.10.10.20</td></tr>
+<tr><td>Goku</td><td>SIEM / Manager</td><td>Ubuntu Server</td><td>ubuntu-srv01</td></tr>
+</table>
+<p>All systems reside on the isolated <code>Namek</code> virtual network (<code>10.10.10.0/24</code>, NAT disabled, no internet egress). Wazuh agents on the endpoints forward authentication telemetry to the manager on Goku.</p>
+
+<h2>3. Attack Execution</h2>
+<p>The attack was performed from Frieza (Kali) using <b>Hydra</b>, a parallelized network login cracker. A single command targets the SSH service, fixes the username to <code>root</code> (<code>-l</code>), and iterates every password in the rockyou wordlist (<code>-P</code>):</p>
+<pre>$ hydra -l root -P /usr/share/wordlists/rockyou.txt ssh://10.10.10.20</pre>
+<table>
+<tr><th>Parameter</th><th>Meaning</th></tr>
+<tr><td><code>hydra</code></td><td>Parallel brute-force / credential-cracking tool</td></tr>
+<tr><td><code>-l root</code></td><td>Single target username: <code>root</code> (a high-value, privileged account)</td></tr>
+<tr><td><code>-P /usr/share/wordlists/rockyou.txt</code></td><td>Password list — ~14 million common, leaked passwords</td></tr>
+<tr><td><code>ssh://10.10.10.20</code></td><td>Protocol and target: SSH on the victim host</td></tr>
+</table>
+<p>Hydra opens many parallel SSH sessions and attempts each candidate password in rapid succession — generating a high-volume burst of failed authentication attempts that is the signature of this attack.</p>
+
+<h2 class="pagebreak">4. Detection &amp; Evidence (Wazuh)</h2>
+<p>The brute-force activity produced an unmistakable spike in the Wazuh dashboard. The authentication-failure count and the level-12+ alerts directly correspond to the attack window.</p>
+<img src="/home/supremekai/.openclaw/workspace/cybersecurity-wazuh-siem/assets/ssh-bruteforce-dashboard-fit.png" alt="Wazuh dashboard showing the brute-force spike" /><br/><span class="meta">Figure 1 — Wazuh dashboard during the attack window (full-resolution image in the repo's <code>assets/</code>).</span>
+<table>
+<tr><th>Metric</th><th>Value</th><th>Interpretation</th></tr>
+<tr><td>Total alerts</td><td>16,420</td><td>Overall event volume in the window</td></tr>
+<tr><td>Authentication failures</td><td class="crit">10,700</td><td>The brute-force password-guessing flood</td></tr>
+<tr><td>Authentication successes</td><td>136</td><td>Baseline / legitimate logons</td></tr>
+<tr><td>Level 12+ (critical) alerts</td><td class="crit">4</td><td>High-severity correlated alerts (e.g. multiple failures / queue flooding)</td></tr>
+</table>
+<p>The <b>Top 10 Alert Level Evolution</b> chart shows a sharp single spike (rather than steady background noise) — characteristic of an automated tool, not human logins. The <b>Top 10 MITRE ATT&amp;CK</b> breakdown is dominated by <b>Account Access</b>, with <b>Valid Accounts</b>, <b>Password Guessing</b>, <b>Remote Services</b>, and <b>SSH</b> all represented.</p>
+
+<h3>Representative alert rules triggered</h3>
+<table>
+<tr><th>Rule ID</th><th>Description</th><th>Level</th><th>Count</th></tr>
+<tr><td>60122</td><td>Logon Failure — unknown user or bad password</td><td>5</td><td>10,697</td></tr>
+<tr><td>204</td><td>Agent event queue is flooded (volume of events)</td><td class="crit">12</td><td>4</td></tr>
+<tr><td>203</td><td>Agent event queue is full — events may be lost</td><td>9</td><td>4</td></tr>
+<tr><td>5760</td><td>sshd: authentication failed</td><td>5</td><td>1</td></tr>
+<tr><td>5715</td><td>sshd: authentication success</td><td>3</td><td>1</td></tr>
+<tr><td>5503</td><td>PAM: user login failed</td><td>5</td><td>1</td></tr>
+<tr><td>5557</td><td>unix_chkpwd: password check failed</td><td>5</td><td>1</td></tr>
+</table>
+<p class="meta">Full alert breakdown is included in the appended Wazuh Threat Hunting Report.</p>
+
+<h2>5. Vulnerability Assessment</h2>
+<table>
+<tr><th>Field</th><th>Detail</th></tr>
+<tr><td>Finding</td><td>SSH exposed to unrestricted password brute-forcing of a privileged account</td></tr>
+<tr><td>Severity</td><td class="crit">CRITICAL</td></tr>
+<tr><td>CVSS 3.1 (est.)</td><td>9.8 — <span class="mono">AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H</span></td></tr>
+<tr><td>Affected asset</td><td>10.10.10.20 (SSH service, port 22)</td></tr>
+<tr><td>Attack vector</td><td>Network — remote, unauthenticated</td></tr>
+</table>
+<p><b>Description.</b> The SSH service accepts password authentication for the <code>root</code> account and applies no controls to limit repeated failed attempts. An attacker on the network can therefore run an unlimited automated dictionary attack. Against a weak or common password, account compromise — and, for <code>root</code>, full system takeover — is only a matter of time.</p>
+
+<h2>6. MITRE ATT&amp;CK Mapping</h2>
+<table>
+<tr><th>Tactic</th><th>Technique</th><th>ID</th></tr>
+<tr><td>Credential Access</td><td>Brute Force</td><td>T1110</td></tr>
+<tr><td>Credential Access</td><td>Brute Force: Password Guessing</td><td>T1110.001</td></tr>
+<tr><td>Defense Evasion / Persistence</td><td>Valid Accounts</td><td>T1078</td></tr>
+<tr><td>Lateral Movement / Initial Access</td><td>Remote Services: SSH</td><td>T1021.004</td></tr>
+</table>
+
+<h2>7. Root Cause Analysis</h2>
+<table>
+<tr><th>#</th><th>Root cause</th><th>Why it matters</th></tr>
+<tr><td>1</td><td>Password authentication enabled for SSH</td><td>Passwords are guessable; keys are not</td></tr>
+<tr><td>2</td><td>Direct <code>root</code> login permitted</td><td>Targets the highest-privilege account directly</td></tr>
+<tr><td>3</td><td>No rate-limiting / account lockout</td><td>Allows unlimited rapid guesses</td></tr>
+<tr><td>4</td><td>No MFA</td><td>A correct password alone grants access</td></tr>
+<tr><td>5</td><td>Weak/common password policy</td><td>Vulnerable to wordlists like rockyou.txt</td></tr>
+</table>
+
+<h2 class="pagebreak">8. Remediation — Steps to Avoid</h2>
+<h3>Harden SSH (<code>/etc/ssh/sshd_config</code>)</h3>
+<pre>PermitRootLogin no            # never allow direct root login
+PasswordAuthentication no     # require SSH keys instead of passwords
+PubkeyAuthentication yes
+MaxAuthTries 3                # limit attempts per connection
+LoginGraceTime 20
+AllowUsers adminuser          # explicit allow-list</pre>
+<p>Then: <code>sudo systemctl restart sshd</code></p>
+
+<h3>Add brute-force protection</h3>
+<ul>
+<li><b>Fail2Ban</b> — auto-ban source IPs after N failed attempts (<code>sudo apt install fail2ban</code>, enable the <code>sshd</code> jail).</li>
+<li><b>Account lockout / rate-limiting</b> — PAM <code>pam_faillock</code> or firewall rate limits (<code>iptables ... --hashlimit</code>).</li>
+<li><b>Key-based authentication + passphrase</b> — eliminates password guessing entirely.</li>
+<li><b>Multi-factor authentication</b> — e.g. Google Authenticator PAM module.</li>
+</ul>
+
+<h3>Reduce exposure</h3>
+<ul>
+<li>Change SSH from the default port 22 (reduces automated noise; not a control on its own).</li>
+<li>Restrict SSH to management subnets/VPN via firewall — never expose it broadly.</li>
+<li>Enforce a strong password policy (length + complexity) for any password-based access.</li>
+</ul>
+
+<h3>Detection &amp; response (Blue Team)</h3>
+<ul>
+<li>Tune a Wazuh rule/alert for a threshold of failed SSH logons in a short window (rule 5710/5712 frequency correlation).</li>
+<li>Enable <b>Wazuh Active Response</b> to automatically firewall-drop an attacking IP on detection.</li>
+<li>Alert on the first successful login that immediately follows a burst of failures (possible successful brute force).</li>
+</ul>
+
+<h2>9. Conclusion</h2>
+<p>This exercise closed the full purple-team loop: an offensive brute-force attack was executed with Hydra and reliably detected by the Wazuh SIEM, which surfaced the activity as a clear authentication-failure spike with MITRE ATT&amp;CK context. The underlying weaknesses — password-based SSH, direct root login, and the absence of brute-force protections — are straightforward to remediate. Applying the controls in Section 8 (key-based auth, no root login, Fail2Ban, MFA) would render this attack ineffective, and the detection tuning would catch any future attempts immediately.</p>
+<p class="meta">Appendix follows: full Wazuh Threat Hunting Report (auto-generated).</p>
+
+</body>
+</html>
