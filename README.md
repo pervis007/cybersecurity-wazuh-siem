@@ -204,6 +204,29 @@ This closes the loop on the [SSH brute-force assessment](reports/SSH-BruteForce-
 
 The flood of short-lived `sshd.exe` child processes is the host-side fingerprint of the same brute-force that produced the authentication-failure spike — authentication telemetry (what failed) now corroborated by process telemetry (what ran). With binary hashes captured, every executed process can also be checked against an allowlist or threat intel.
 
+## 🔒 System Hardening
+
+Beyond remediating the specific SSH finding, these baseline controls reduce the overall attack surface across the lab. They apply to both the Linux and Windows hosts and are detailed further in the [Vulnerability Assessment report](reports/SSH-BruteForce-Vulnerability-Assessment.pdf) (Section 9).
+
+| Area | Key steps |
+|---|---|
+| **Patch management** | Keep all hosts current; enable automatic security updates (`unattended-upgrades` / Windows Update) |
+| **Accounts & privilege** | Strong password policy + lockout, least privilege, remove unused/admin accounts, restrict `sudo`, **MFA** for remote/privileged access |
+| **Service & network** | Disable unused services, close unused ports, **default-deny host firewall** (`ufw` / Windows Defender Firewall), network segmentation |
+| **Remote access** | SSH keys (no root login), RDP with NLA restricted to VPN/management subnets |
+| **Application control** | Deny-by-default **allowlisting** (AppLocker / WDAC / Zero Trust), approving software by hash — pairs with the SHA-256s Sysmon captures |
+| **Logging & monitoring** | `auditd` + Sysmon forwarded to Wazuh, **File Integrity Monitoring (FIM)** on critical paths |
+| **Benchmarking** | **Wazuh Security Configuration Assessment (SCA)** against **CIS Benchmarks** to score hosts and track hardening drift |
+
+```bash
+# Examples
+sudo apt update && sudo apt upgrade -y                     # patch
+sudo systemctl disable --now <unused-service>              # minimize services
+sudo ufw default deny incoming && sudo ufw allow 22/tcp && sudo ufw enable   # default-deny firewall
+```
+
+> 💡 Wazuh's built-in **SCA module** runs CIS Benchmark checks out of the box — a fast way to measure how hardened each agent is and prioritize fixes.
+
 ---
 
 *Part of my [cybersecurity homelab](https://github.com/pervis007/cybersecurity-homelab) and [portfolio](https://pervis007.github.io).*

@@ -148,7 +148,57 @@ AllowUsers adminuser          # explicit allow-list</pre>
 <li>Alert on the first successful login that immediately follows a burst of failures (possible successful brute force).</li>
 </ul>
 
-<h2 class="pagebreak">9. Endpoint Telemetry Correlation (Sysmon)</h2>
+<h2 class="pagebreak">9. System Hardening</h2>
+<p>Beyond fixing the specific SSH weakness, the following baseline hardening reduces the overall attack surface of every host. Controls are grouped by area and apply to both the Linux and Windows systems in the environment.</p>
+
+<h3>9.1 Patch &amp; update management</h3>
+<ul>
+<li><b>Linux:</b> keep packages current and enable automatic security updates.</li>
+<li><b>Windows:</b> stay current via Windows Update; track and approve patch hashes for allowlisting.</li>
+</ul>
+<pre>sudo apt update &amp;&amp; sudo apt upgrade -y
+sudo apt install unattended-upgrades &amp;&amp; sudo dpkg-reconfigure unattended-upgrades</pre>
+
+<h3>9.2 Account &amp; privilege hardening</h3>
+<ul>
+<li>Enforce a strong password policy and account lockout (<code>pam_pwquality</code> / <code>pam_faillock</code> on Linux; Account Lockout Policy on Windows).</li>
+<li>Apply least privilege — remove unused and local admin accounts, restrict <code>sudo</code> to named users.</li>
+<li>Require <b>MFA</b> for all remote and privileged access.</li>
+</ul>
+
+<h3>9.3 Service &amp; network minimization</h3>
+<ul>
+<li>Disable unused services and close unused ports.</li>
+<li>Enforce a <b>default-deny host firewall</b>, allowing only required traffic.</li>
+<li>Segment the network (already implemented via the isolated <code>Namek</code> network).</li>
+</ul>
+<pre>sudo systemctl disable --now &lt;unused-service&gt;
+sudo ufw default deny incoming &amp;&amp; sudo ufw allow 22/tcp &amp;&amp; sudo ufw enable</pre>
+
+<h3>9.4 Authentication &amp; remote access</h3>
+<ul>
+<li><b>SSH:</b> key-based auth, no root login, limited attempts (see Section 8).</li>
+<li><b>RDP:</b> require Network Level Authentication, restrict to VPN/management subnets, enforce strong credentials + lockout.</li>
+</ul>
+
+<h3>9.5 Application control (allowlisting)</h3>
+<ul>
+<li>Deploy <b>deny-by-default application allowlisting</b> — Windows Defender Application Control / AppLocker, or a Zero Trust product — approving software by hash.</li>
+<li>This pairs directly with the SHA-256 hashes Sysmon captures (Section 10): every executed binary can be verified against the approved list.</li>
+</ul>
+
+<h3>9.6 Logging, auditing &amp; monitoring</h3>
+<ul>
+<li>Enable <code>auditd</code> (Linux) and <b>Sysmon</b> (Windows), forwarding both to Wazuh.</li>
+<li>Turn on <b>Wazuh File Integrity Monitoring (FIM)</b> for critical files and directories.</li>
+</ul>
+
+<h3>9.7 Configuration benchmarking</h3>
+<ul>
+<li>Run <b>Wazuh Security Configuration Assessment (SCA)</b> against the <b>CIS Benchmarks</b> to score each host, identify misconfigurations, and track hardening drift over time.</li>
+</ul>
+
+<h2 class="pagebreak">10. Endpoint Telemetry Correlation (Sysmon)</h2>
 <p>To corroborate the authentication-failure evidence at the process level, <b>Sysmon</b> was deployed on the Windows target (<code>windows-cli01</code>) and its <code>Microsoft-Windows-Sysmon/Operational</code> channel forwarded to Wazuh. This is significant because the target <b>runs OpenSSH for Windows</b> — so the Hydra SSH attack is observable both as Windows authentication failures <i>and</i> as host-side process activity.</p>
 <p>Sysmon's <b>Event ID 1 (Process Create)</b> recorded repeated executions of the OpenSSH daemon as it forked to service each incoming Hydra connection, complete with binary hash and parent lineage:</p>
 <img src="/home/supremekai/.openclaw/workspace/cybersecurity-wazuh-siem/assets/sysmon-event-details-fit.png" alt="Sysmon Event ID 1 details for sshd.exe" /><br/>
@@ -168,7 +218,7 @@ AllowUsers adminuser          # explicit allow-list</pre>
 <b>Correlation:</b> the flood of short-lived <code>sshd.exe</code> child processes (Sysmon, what <i>ran</i>) lines up with the ~10,700 authentication failures (Wazuh, what <i>failed</i>) in the same window — two independent data sources confirming the same brute-force. Capturing each process's SHA-256 also enables allowlist / threat-intel checks on everything that executed.
 </div>
 
-<h2>10. Conclusion</h2>
+<h2>11. Conclusion</h2>
 <p>This exercise closed the full purple-team loop: an offensive brute-force attack was executed with Hydra and reliably detected by the Wazuh SIEM, which surfaced the activity as a clear authentication-failure spike with MITRE ATT&amp;CK context. The underlying weaknesses — password-based SSH, direct root login, and the absence of brute-force protections — are straightforward to remediate. Applying the controls in Section 8 (key-based auth, no root login, Fail2Ban, MFA) would render this attack ineffective, and the detection tuning would catch any future attempts immediately.</p>
 <p class="meta">Appendix follows: full Wazuh Threat Hunting Report (auto-generated).</p>
 
