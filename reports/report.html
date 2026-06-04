@@ -148,7 +148,27 @@ AllowUsers adminuser          # explicit allow-list</pre>
 <li>Alert on the first successful login that immediately follows a burst of failures (possible successful brute force).</li>
 </ul>
 
-<h2>9. Conclusion</h2>
+<h2 class="pagebreak">9. Endpoint Telemetry Correlation (Sysmon)</h2>
+<p>To corroborate the authentication-failure evidence at the process level, <b>Sysmon</b> was deployed on the Windows target (<code>windows-cli01</code>) and its <code>Microsoft-Windows-Sysmon/Operational</code> channel forwarded to Wazuh. This is significant because the target <b>runs OpenSSH for Windows</b> — so the Hydra SSH attack is observable both as Windows authentication failures <i>and</i> as host-side process activity.</p>
+<p>Sysmon's <b>Event ID 1 (Process Create)</b> recorded repeated executions of the OpenSSH daemon as it forked to service each incoming Hydra connection, complete with binary hash and parent lineage:</p>
+<img src="/home/supremekai/.openclaw/workspace/cybersecurity-wazuh-siem/assets/sysmon-event-details-fit.png" alt="Sysmon Event ID 1 details for sshd.exe" /><br/>
+<span class="meta">Figure 2 — Sysmon Process Create event for <code>sshd.exe</code> (full-resolution image in the repo's <code>assets/</code>).</span>
+<table>
+<tr><th>Sysmon field</th><th>Value</th></tr>
+<tr><td>Event ID</td><td>1 — Process Create</td></tr>
+<tr><td>Image</td><td><code>C:\Windows\System32\OpenSSH\sshd.exe</code></td></tr>
+<tr><td>Product / Version</td><td>OpenSSH for Windows — 9.5.5.1</td></tr>
+<tr><td>Parent</td><td><code>sshd.exe -R</code> (daemon servicing a connection)</td></tr>
+<tr><td>User</td><td><code>VIRTUAL USERS\sshd_*</code></td></tr>
+<tr><td>Integrity level</td><td>High</td></tr>
+<tr><td>SHA-256</td><td class="mono">6F41B39CD3A6EB6F834383A47DDB07137A77FA2ED5F36332BCDB4F40FFCB6D8B</td></tr>
+<tr><td>Host</td><td>windows-cli01</td></tr>
+</table>
+<div class="box">
+<b>Correlation:</b> the flood of short-lived <code>sshd.exe</code> child processes (Sysmon, what <i>ran</i>) lines up with the ~10,700 authentication failures (Wazuh, what <i>failed</i>) in the same window — two independent data sources confirming the same brute-force. Capturing each process's SHA-256 also enables allowlist / threat-intel checks on everything that executed.
+</div>
+
+<h2>10. Conclusion</h2>
 <p>This exercise closed the full purple-team loop: an offensive brute-force attack was executed with Hydra and reliably detected by the Wazuh SIEM, which surfaced the activity as a clear authentication-failure spike with MITRE ATT&amp;CK context. The underlying weaknesses — password-based SSH, direct root login, and the absence of brute-force protections — are straightforward to remediate. Applying the controls in Section 8 (key-based auth, no root login, Fail2Ban, MFA) would render this attack ineffective, and the detection tuning would catch any future attempts immediately.</p>
 <p class="meta">Appendix follows: full Wazuh Threat Hunting Report (auto-generated).</p>
 

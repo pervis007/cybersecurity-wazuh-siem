@@ -147,12 +147,62 @@ I wrote up the whole exercise as a formal report — attack execution, evidence,
 
 **Headline finding:** `CRITICAL` — SSH permits password authentication for `root` with no rate-limiting, lockout, or MFA, allowing unlimited automated password guessing. Remediation: disable root login, enforce key-based auth, deploy Fail2Ban + MFA, and tune Wazuh active-response to auto-ban attacking IPs.
 
-## 🗺️ Next Steps
+## 🧬 Endpoint Telemetry: Sysmon on Windows
 
-- [ ] Deploy **Sysmon** on Windows for deeper process/network telemetry
-- [ ] Run a controlled attack (e.g. brute-force RDP/SMB) and capture the resulting alerts
-- [ ] Build custom detection rules and a dashboard mapped to ATT&CK techniques
-- [ ] Document full attack → detection → response walkthroughs with screenshots
+To go beyond default Windows logging, I deployed **Sysmon** (System Monitor) on the Windows host (`windows-cli01`). Sysmon records rich endpoint detail — **process creation with command lines, parent process lineage, and binary SHA-256 hashes** — and feeds it straight into Wazuh, which is exactly the telemetry needed to investigate the brute-force activity at the process level.
+
+### Installation (PowerShell, elevated)
+
+```powershell
+# 1. Download Sysmon (Sysinternals) and a detection-focused config
+Invoke-WebRequest -Uri "https://download.sysinternals.com/files/Sysmon.zip" -OutFile "$env:TEMP\Sysmon.zip"
+Expand-Archive "$env:TEMP\Sysmon.zip" -DestinationPath "C:\Sysmon" -Force
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/SwiftOnSecurity/sysmon-config/master/sysmonconfig-export.xml" -OutFile "C:\Sysmon\sysmonconfig.xml"
+
+# 2. Install Sysmon as a service with the config
+C:\Sysmon\Sysmon64.exe -accepteula -i C:\Sysmon\sysmonconfig.xml
+
+# 3. Verify the service is running
+Get-Service Sysmon64
+Get-WinEvent -LogName "Microsoft-Windows-Sysmon/Operational" -MaxEvents 1
+```
+
+> In the isolated `Namek` network (no internet egress), the Sysmon binary and config were staged locally rather than pulled live.
+
+### Forward Sysmon events to Wazuh
+
+The Wazuh agent is told to collect the Sysmon channel by adding this to `C:\Program Files (x86)\ossec-agent\ossec.conf`, then restarting the agent:
+
+```xml
+<localfile>
+  <location>Microsoft-Windows-Sysmon/Operational</location>
+  <log_format>eventchannel</log_format>
+</localfile>
+```
+
+```powershell
+Restart-Service WazuhSvc
+```
+
+### Evidence
+
+Sysmon's Operational log filled with events (20,783+) and captured the OpenSSH server activity tied to the attack:
+
+![Sysmon Operational log and Process Create event](assets/sysmon-event-general.png)
+
+![Sysmon Event ID 1 details — sshd.exe with SHA-256 hash](assets/sysmon-event-details.png)
+
+### 🔗 Correlation with the SSH Brute-Force Report
+
+This closes the loop on the [SSH brute-force assessment](reports/SSH-BruteForce-Vulnerability-Assessment.pdf). The target host **runs OpenSSH for Windows**, so the Hydra attack against `ssh://10.10.10.20` is visible from two angles at once:
+
+| Evidence source | What it shows |
+|---|---|
+| **Wazuh auth alerts** | ~10,700 authentication failures (Windows logon-failure rule 60122) during the attack window |
+| **Sysmon Event ID 1** | Repeated **Process Create** events for `C:\Windows\System32\OpenSSH\sshd.exe` (`OpenSSH for Windows` 9.5.5.1) as the daemon forked to service each incoming Hydra connection |
+| **Process integrity** | SHA-256 `6F41B39C…CB6D8B`, parent `sshd.exe -R`, user `VIRTUAL USERS\sshd_*`, integrity level High |
+
+The flood of short-lived `sshd.exe` child processes is the host-side fingerprint of the same brute-force that produced the authentication-failure spike — authentication telemetry (what failed) now corroborated by process telemetry (what ran). With binary hashes captured, every executed process can also be checked against an allowlist or threat intel.
 
 ---
 
