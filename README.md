@@ -145,7 +145,7 @@ I wrote up the whole exercise as a formal report — attack execution, evidence,
 
 **➡️ [SSH-BruteForce-Vulnerability-Assessment.pdf](reports/SSH-BruteForce-Vulnerability-Assessment.pdf)**
 
-**Headline finding:** `CRITICAL` — SSH permits password authentication for `root` with no rate-limiting, lockout, or MFA, allowing unlimited automated password guessing. Remediation: disable root login, enforce key-based auth, deploy Fail2Ban + MFA, and tune Wazuh active-response to auto-ban attacking IPs.
+**Headline finding:** `CRITICAL` — OpenSSH for Windows permits password authentication with no lockout or MFA, allowing unlimited automated password guessing. Remediation (Windows): enforce key-based auth, set a Windows Account Lockout Policy, restrict inbound SSH via Windows Defender Firewall, add MFA, and tune Wazuh active-response to auto-ban attacking IPs.
 
 ## 🧬 Endpoint Telemetry: Sysmon on Windows
 

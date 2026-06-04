@@ -117,34 +117,37 @@
 </table>
 
 <h2 class="pagebreak">8. Remediation — Steps to Avoid</h2>
-<h3>Harden SSH (<code>/etc/ssh/sshd_config</code>)</h3>
-<pre>PermitRootLogin no            # never allow direct root login
-PasswordAuthentication no     # require SSH keys instead of passwords
+<p>The target is a <b>Windows 11 host running OpenSSH for Windows</b>, so remediation uses Windows tooling — the OpenSSH server config lives at <code>C:\ProgramData\ssh\sshd_config</code> and there is no <code>root</code> account, Fail2Ban, or PAM on this platform.</p>
+
+<h3>Harden OpenSSH for Windows (<code>C:\ProgramData\ssh\sshd_config</code>)</h3>
+<pre>PasswordAuthentication no     # require SSH keys instead of passwords
 PubkeyAuthentication yes
 MaxAuthTries 3                # limit attempts per connection
 LoginGraceTime 20
-AllowUsers adminuser          # explicit allow-list</pre>
-<p>Then: <code>sudo systemctl restart sshd</code></p>
+AllowUsers adminuser          # explicit allow-list (no broad access)
+DenyUsers root administrator  # block high-value account names</pre>
+<p>Apply with (elevated PowerShell): <code>Restart-Service sshd</code>. For admin key auth, place keys in <code>C:\ProgramData\ssh\administrators_authorized_keys</code>.</p>
 
-<h3>Add brute-force protection</h3>
+<h3>Add brute-force protection (Windows)</h3>
 <ul>
-<li><b>Fail2Ban</b> — auto-ban source IPs after N failed attempts (<code>sudo apt install fail2ban</code>, enable the <code>sshd</code> jail).</li>
-<li><b>Account lockout / rate-limiting</b> — PAM <code>pam_faillock</code> or firewall rate limits (<code>iptables ... --hashlimit</code>).</li>
-<li><b>Key-based authentication + passphrase</b> — eliminates password guessing entirely.</li>
-<li><b>Multi-factor authentication</b> — e.g. Google Authenticator PAM module.</li>
+<li><b>Account Lockout Policy</b> — lock an account after N failed attempts via <code>secpol.msc</code> (Account Lockout Policy) or <code>net accounts /lockoutthreshold:5 /lockoutduration:15</code>.</li>
+<li><b>Windows Defender Firewall</b> — block/throttle the source IP and restrict inbound port 22 to trusted hosts (<code>New-NetFirewallRule</code>).</li>
+<li><b>Key-based authentication + passphrase</b> — eliminates password guessing entirely (OpenSSH supports it natively on Windows).</li>
+<li><b>Multi-factor authentication</b> — e.g. Duo or a smart-card / Windows Hello for Business gate on remote access.</li>
+<li>If SSH isn't required, <b>remove the feature entirely</b>: <code>Remove-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0</code>.</li>
 </ul>
 
 <h3>Reduce exposure</h3>
 <ul>
-<li>Change SSH from the default port 22 (reduces automated noise; not a control on its own).</li>
-<li>Restrict SSH to management subnets/VPN via firewall — never expose it broadly.</li>
-<li>Enforce a strong password policy (length + complexity) for any password-based access.</li>
+<li>Restrict OpenSSH to management subnets/VPN via Windows Defender Firewall — never expose it broadly.</li>
+<li>Change SSH from the default port 22 in <code>sshd_config</code> (reduces automated noise; not a control on its own).</li>
+<li>Enforce a strong Windows password policy (length + complexity) via Group Policy / <code>secpol.msc</code>.</li>
 </ul>
 
 <h3>Detection &amp; response (Blue Team)</h3>
 <ul>
-<li>Tune a Wazuh rule/alert for a threshold of failed SSH logons in a short window (rule 5710/5712 frequency correlation).</li>
-<li>Enable <b>Wazuh Active Response</b> to automatically firewall-drop an attacking IP on detection.</li>
+<li>Tune a Wazuh rule/alert for a threshold of failed logons in a short window (Windows logon-failure rule 60122, plus sshd rules 5710/5712 frequency correlation).</li>
+<li>Enable <b>Wazuh Active Response</b> to automatically firewall-drop an attacking IP on detection (the <code>netsh</code>/firewall command works on Windows agents).</li>
 <li>Alert on the first successful login that immediately follows a burst of failures (possible successful brute force).</li>
 </ul>
 
